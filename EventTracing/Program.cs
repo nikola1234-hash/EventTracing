@@ -1,46 +1,90 @@
-﻿using Microsoft.Diagnostics.Tracing;
+﻿using System;
+using System.Diagnostics;
+using System.Linq;
+using System.Security.Principal;
+using System.Threading;
+using Microsoft.Diagnostics.Tracing;
 using Microsoft.Diagnostics.Tracing.Session;
-using System;
-using System.Diagnostics.Tracing;
 
 namespace EventTracing
 {
     class Program
     {
+       
+
         static void Main(string[] args)
         {
 
-            using (var session = new TraceEventSession("MySecuritySession"))
+            try
             {
-                session.EnableProvider("Microsoft-Windows-Security-Auditing", TraceEventLevel.Informational, (ulong)(EventKeywords.AuditSuccess | EventKeywords.AuditFailure));
 
-                session.Source.Dynamic.All += data =>
+                EventLog log = EventLog.GetEventLogs().First(o => o.Log == "Security");
+                log.EnableRaisingEvents = true;
+                Console.WriteLine("Listening to events...");
+                log.EntryWritten += (s, e) =>
                 {
-                    if (data.ProviderName == "Microsoft-Windows-Security-Auditing" && (data.EventName == "4624" || data.EventName == "4625" || data.EventName == "4672" || data.EventName == "4648"))
+                    Thread.Sleep(1000);
+                    if (e.Entry.EntryType == EventLogEntryType.SuccessAudit &&
+                    (e.Entry.InstanceId == 4624 || e.Entry.InstanceId == 4625 ||
+                       e.Entry.InstanceId == 4672 || e.Entry.InstanceId == 4648))
                     {
-                       
-                        string eventId = data.EventName;
-                        string targetUserName = (string)data.PayloadValue(0);
-                        string subjectLogonId = (string)data.PayloadValue(1);
-                  
-                        ProcessSecurityEvent(eventId, targetUserName, subjectLogonId);
-                    }
-                };
+                        Console.WriteLine($"Event Type: {e.Entry.EntryType}");
+                        Console.WriteLine($"Instance ID: {e.Entry.InstanceId}");
+                        Console.WriteLine($"Time Generated: {e.Entry.TimeGenerated}");
+                        Console.WriteLine($"Source: {e.Entry.Source}");
+                        Console.WriteLine($"Message: {e.Entry.Message}");
 
-                Console.WriteLine("Listening for security events. Press any key to exit...");
+                        if (e.Entry.InstanceId == 4624 || e.Entry.InstanceId == 4625)
+                        {
+                            string targetUserName = e.Entry.UserName;
+                            string subjectLogonId = e.Entry.ReplacementStrings[1];
+                            string logonType = e.Entry.ReplacementStrings[2];
+                            string workstationName = e.Entry.ReplacementStrings[13];
+                            string ipAddress = e.Entry.ReplacementStrings[18];
+
+                            Console.WriteLine($"Target User Name: {targetUserName}");
+                            Console.WriteLine($"Subject Logon ID: {subjectLogonId}");
+                            Console.WriteLine($"Logon Type: {logonType}");
+                            Console.WriteLine($"Workstation Name: {workstationName}");
+                            Console.WriteLine($"IP Address: {ipAddress}");
+                        }
+                        else if (e.Entry.InstanceId == 4672)
+                        {
+                            string accountName = e.Entry.ReplacementStrings[1];
+                            string privilegeList = e.Entry.ReplacementStrings[4];
+
+                            Console.WriteLine($"Account Name: {accountName}");
+                            Console.WriteLine($"Privilege List: {privilegeList}");
+                        }
+                        else if (e.Entry.InstanceId == 4648)
+                        {
+                            string processName = e.Entry.ReplacementStrings[0];
+                            string processId = e.Entry.ReplacementStrings[1];
+                            string callerProcessName = e.Entry.ReplacementStrings[2];
+                            string callerProcessId = e.Entry.ReplacementStrings[3];
+
+                            Console.WriteLine($"Process Name: {processName}");
+                            Console.WriteLine($"Process ID: {processId}");
+                            Console.WriteLine($"Caller Process Name: {callerProcessName}");
+                            Console.WriteLine($"Caller Process ID: {callerProcessId}");
+                        }
+
+                        Console.WriteLine();
+                    };
+
+            
+                };
+                Console.ReadLine();
+            
+
+            }
+            catch (Exception ex)
+            {
+
+                Console.WriteLine(ex.Message);
                 Console.ReadKey();
             }
         }
-
-        static void ProcessSecurityEvent(string eventId, string targetUserName, string subjectLogonId)
-        {
-
-            Console.WriteLine($"Event ID: {eventId}");
-            Console.WriteLine($"TargetUserName: {targetUserName}");
-            Console.WriteLine($"SubjectLogonId: {subjectLogonId}");
-        }
-    }
-
-    
- }
+    } 
+}
 
